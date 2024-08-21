@@ -103,16 +103,19 @@
 
 (defvar-local flycheck-eglot--current-errors nil)
 
+(defvar-local flycheck-eglot--current-callback nil)
+
+(defun flycheck-eglot--call-current-callback ()
+  "Invoke `flycheck-eglot--current-callback', if it is set."
+  (when (not (null flycheck-eglot--current-callback))
+    (funcall flycheck-eglot--current-callback 'finished flycheck-eglot--current-errors)))
 
 (defun flycheck-eglot--start (checker callback)
   "Start function for generic checker definition.
 CHECKER is the current checker (assuming eglot-check).
 CALLBACK is a callback function provided by Flycheck."
   (when (eq checker 'eglot-check)
-    (funcall callback
-             'finished
-             flycheck-eglot--current-errors)))
-
+    (setq flycheck-eglot--current-callback callback)))
 
 (flymake--diag-accessor flymake-diagnostic-overlay-properties
                         flymake--diag-overlay-properties overlay-properties)
@@ -190,7 +193,7 @@ DIAGS is the Eglot diagnostics list in Flymake format."
 
     (setq flycheck-eglot--current-errors
           (mapcar #'diag-to-err diags))
-    (flycheck-buffer-automatically '(idle-change new-line))))
+    (flycheck-eglot--call-current-callback)))
 
 
 (defun flycheck-eglot--eglot-available-p ()
@@ -222,7 +225,8 @@ DIAGS is the Eglot diagnostics list in Flymake format."
           (flycheck-add-next-checker 'eglot-check current-checker))))
     (eglot-flymake-backend #'flycheck-eglot--report-eglot-diagnostics)
     (flymake-mode -1)
-    (flycheck-mode 1)))
+    (flycheck-mode 1)
+    (flycheck-eglot--call-current-callback)))
 
 
 (defun flycheck-eglot--teardown ()
