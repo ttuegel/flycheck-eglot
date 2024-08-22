@@ -106,9 +106,9 @@
 (defvar-local flycheck-eglot--current-callback nil)
 
 (defun flycheck-eglot--call-current-callback ()
-  "Invoke `flycheck-eglot--current-callback', if it is set."
-  (when (not (null flycheck-eglot--current-callback))
-    (funcall flycheck-eglot--current-callback 'finished flycheck-eglot--current-errors)))
+  (when (functionp flycheck-eglot--current-callback)
+    (funcall flycheck-eglot--current-callback 'finished flycheck-eglot--current-errors)
+    (setq flycheck-eglot--current-callback nil)))
 
 (defun flycheck-eglot--start (checker callback)
   "Start function for generic checker definition.
@@ -196,6 +196,46 @@ DIAGS is the Eglot diagnostics list in Flymake format."
     (flycheck-eglot--call-current-callback)))
 
 
+(defun flycheck-eglot--new-error (filename buffer diag)
+  "Convert Eglot diagnostic DIAG to Flycheck."
+  (eglot--dbind ((Diagnostic) code range message severity source) diag
+    (let* ((range-start (plist-get range :start))
+           (range-end (plist-get range :end))
+           (range-start-line (1+ (plist-get range-start :line)))
+           (range-start-column (1+ (plist-get range-start :character)))
+           (range-end-line (1+ (plist-get range-end :line)))
+           (range-end-column (1+ (plist-get range-end :character)))
+           (level (cond ((null severity) 'error)
+                        ((<= severity 1) 'error)
+                        ((= severity 2)  'warning)
+                        (t          'info))))
+    (flycheck-error-new
+     :checker 'eglot-check
+     :filename filename
+     :buffer buffer
+     :level level
+     :message message
+     :id code
+     :line range-start-line
+     :column range-start-column
+     :end-line range-end-line
+     :end-column range-end-column
+     ))))
+
+
+(cl-defmethod eglot-handle-notification :extra "flycheck-eglot"
+  (server (_method (eql textDocument/publishDiagnostics)) &key uri diagnostics &allow-other-keys)
+  "Handle notification publishDiagnostics."
+  (-when-let* ((filename (expand-file-name (eglot-uri-to-path uri)))
+               (buffer (find-file-noselect filename)))
+    (with-current-buffer buffer
+      (let ((new-errors (--map (flycheck-eglot--new-error filename buffer it) (seq--into-list diagnostics))))
+        (setq flycheck-eglot--current-errors new-errors)
+        (when (null flycheck-eglot--current-callback)
+            (flycheck-buffer))
+        (flycheck-eglot--call-current-callback)))))
+
+
 (defun flycheck-eglot--eglot-available-p ()
   "Is Eglot available."
   (and (fboundp 'eglot-managed-p)
@@ -223,10 +263,8 @@ DIAGS is the Eglot diagnostics list in Flymake format."
           (setq flycheck-checker 'eglot-check)
         (unless (eq current-checker 'eglot-check)
           (flycheck-add-next-checker 'eglot-check current-checker))))
-    (eglot-flymake-backend #'flycheck-eglot--report-eglot-diagnostics)
     (flymake-mode -1)
-    (flycheck-mode 1)
-    (flycheck-eglot--call-current-callback)))
+    (flycheck-mode 1)))
 
 
 (defun flycheck-eglot--teardown ()
@@ -238,6 +276,7 @@ DIAGS is the Eglot diagnostics list in Flymake format."
           (cl-adjoin 'eglot-check
                      flycheck-disabled-checkers))
     (setq flycheck-eglot--current-errors nil)
+    (setq flycheck-eglot--current-callback nil)
     (flycheck-buffer-deferred)))
 
 
