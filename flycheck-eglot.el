@@ -101,9 +101,7 @@
   "Diagnostic tag label separator.")
 
 
-(defvar-local flycheck-eglot--current-errors nil)
-
-(defvar-local flycheck-eglot--current-callback nil)
+(defvar-local flycheck-eglot--current-diagnostics nil)
 
 (defun flycheck-eglot--call-current-callback ()
   (when (functionp flycheck-eglot--current-callback)
@@ -115,7 +113,9 @@
 CHECKER is the current checker (assuming eglot-check).
 CALLBACK is a callback function provided by Flycheck."
   (when (eq checker 'eglot-check)
-    (setq flycheck-eglot--current-callback callback)))
+    (let ((diagnostics (--map (flycheck-eglot--to-flycheck-diagnostic it)
+                              flycheck-eglot--current-diagnostics)))
+      (funcall callback 'finished diagnostics))))
 
 (flymake--diag-accessor flymake-diagnostic-overlay-properties
                         flymake--diag-overlay-properties overlay-properties)
@@ -196,19 +196,46 @@ DIAGS is the Eglot diagnostics list in Flymake format."
     (flycheck-eglot--call-current-callback)))
 
 
-(defun flycheck-eglot--new-error (filename buffer diag)
-  "Convert Eglot diagnostic DIAG to Flycheck."
+(defun flycheck-eglot--line-column-marker (line column)
+  "Return the point closest to LINE, COLUMN as a marker.
+
+COLUMN is 0-indexed."
+  (set-marker (make-marker) (flycheck-line-column-to-position line (1+ column))))
+
+
+(defun flycheck-eglot--from-eglot-diagnostic (diagnostic)
+  "Convert LSP diagnostic DIAGNOSTIC to our internal representation."
   (eglot--dbind ((Diagnostic) code range message severity source) diag
     (let* ((range-start (plist-get range :start))
            (range-end (plist-get range :end))
-           (range-start-line (1+ (plist-get range-start :line)))
-           (range-start-column (1+ (plist-get range-start :character)))
-           (range-end-line (1+ (plist-get range-end :line)))
-           (range-end-column (1+ (plist-get range-end :character)))
+           (range-start-line (plist-get range-start :line))
+           (range-start-column (plist-get range-start :character))
+           (range-end-line (plist-get range-end :line))
+           (range-end-column (plist-get range-end :character))
            (level (cond ((null severity) 'error)
                         ((<= severity 1) 'error)
                         ((= severity 2)  'warning)
-                        (t          'info))))
+                        (t               'info)))
+           (start-marker (flycheck-eglot--line-column-marker range-start-line range-start-column))
+           (end-marker (flycheck-eglot--line-column-marker range-end-line range-end-column)))
+      (list :start-marker start-marker
+            :end-marker end-marker
+            :level level
+            :code code
+            :message message))))
+
+
+(defun flycheck-eglot--to-flycheck-diagnostic (diagnostic)
+  "Convert our DIAGNOSTIC to a diagnostic for Flycheck."
+  (-let* ((start-marker (plist-get diagnostic :start-marker))
+          (end-marker (plist-get diagnostic :end-marker))
+          (level (plist-get diagnostic :level))
+          (code (plist-get diagnostic :code))
+          (message (plist-get diagnostic :message))
+          ((start-line . start-column) (flycheck-line-column (marker-position start-marker)))
+          ((end-line . end-column) (flycheck-line-column (marker-position end-marker)))
+          (buffer (current-buffer))
+          (filename (buffer-file-name buffer)))
     (flycheck-error-new
      :checker 'eglot-check
      :filename filename
@@ -216,11 +243,10 @@ DIAGS is the Eglot diagnostics list in Flymake format."
      :level level
      :message message
      :id code
-     :line range-start-line
-     :column range-start-column
-     :end-line range-end-line
-     :end-column range-end-column
-     ))))
+     :line start-line
+     :column start-column
+     :end-line end-line
+     :end-column end-column)))
 
 
 (cl-defmethod eglot-handle-notification :extra "flycheck-eglot"
@@ -229,11 +255,10 @@ DIAGS is the Eglot diagnostics list in Flymake format."
   (-when-let* ((filename (expand-file-name (eglot-uri-to-path uri)))
                (buffer (find-file-noselect filename)))
     (with-current-buffer buffer
-      (let ((new-errors (--map (flycheck-eglot--new-error filename buffer it) (seq--into-list diagnostics))))
-        (setq flycheck-eglot--current-errors new-errors)
-        (when (null flycheck-eglot--current-callback)
-            (flycheck-buffer))
-        (flycheck-eglot--call-current-callback)))))
+      (setq flycheck-eglot--current-diagnostics
+            (--map (flycheck-eglot--from-eglot-diagnostic it)
+                   (setq-into diagnostics 'list)))
+      (when flycheck-mode (flycheck-buffer)))))
 
 
 (defun flycheck-eglot--eglot-available-p ()
@@ -275,8 +300,7 @@ DIAGS is the Eglot diagnostics list in Flymake format."
     (setq flycheck-disabled-checkers
           (cl-adjoin 'eglot-check
                      flycheck-disabled-checkers))
-    (setq flycheck-eglot--current-errors nil)
-    (setq flycheck-eglot--current-callback nil)
+    (setq flycheck-eglot--current-diagnostics nil)
     (flycheck-buffer-deferred)))
 
 
