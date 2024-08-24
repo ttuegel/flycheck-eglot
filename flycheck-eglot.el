@@ -104,10 +104,6 @@
 
 (defvar-local flycheck-eglot--current-diagnostics nil)
 
-(defun flycheck-eglot--call-current-callback ()
-  (when (functionp flycheck-eglot--current-callback)
-    (funcall flycheck-eglot--current-callback 'finished flycheck-eglot--current-errors)
-    (setq flycheck-eglot--current-callback nil)))
 
 (defun flycheck-eglot--start (checker callback)
   "Start function for generic checker definition.
@@ -117,84 +113,6 @@ CALLBACK is a callback function provided by Flycheck."
     (let ((diagnostics (--map (flycheck-eglot--to-flycheck-diagnostic it)
                               flycheck-eglot--current-diagnostics)))
       (funcall callback 'finished diagnostics))))
-
-(flymake--diag-accessor flymake-diagnostic-overlay-properties
-                        flymake--diag-overlay-properties overlay-properties)
-
-
-(defun flycheck-eglot--get-error-level (diag)
-  "Select or create (if necessary) a flycheck error level.
-DIAG is the Eglot diagnostics in Flymake format."
-  (let ((level (pcase (flymake-diagnostic-type diag)
-                 ('eglot-note 'info)
-                 ('eglot-warning 'warning)
-                 ('eglot-error 'error)
-                 (_ (error "Unknown diagnostic type: %S" diag))))
-        (overlay-props (flymake-diagnostic-overlay-properties diag)))
-    (if (and flycheck-eglot-enable-diagnostic-tags
-             overlay-props)
-        (let* ((faces (alist-get 'face overlay-props))
-               (tags (mapcar
-                      (lambda (face)
-                        (pcase face
-                          ('eglot-diagnostic-tag-unnecessary-face 'unnecessary)
-                          ('eglot-diagnostic-tag-deprecated-face 'deprecated)
-                          (_ (error "Unknown eglot face: %S" face))))
-                      faces))
-               (name (format "%s%s%s"
-                             level
-                             flycheck-eglot-level-tag-separator
-                             (mapconcat (lambda (tag)
-                                          (alist-get tag flycheck-eglot-tag-labels))
-                                        tags flycheck-eglot-tag-separator))))
-
-          (or (intern-soft name)
-              (let* ((new-level (intern name))
-                     (face (get (flycheck-error-level-overlay-category level)
-                                'face))
-                     (faces (append faces
-                                    (list face)))
-                     (priority (get (flycheck-error-level-overlay-category level)
-                                    'priority))
-                     (bitmaps (cons (flycheck-error-level-fringe-bitmap level)
-                                    (flycheck-error-level-fringe-bitmap level t)))
-                     (category (intern (format "%s-category" name))))
-
-                (setf (get category 'face) faces)
-                (setf (get category 'priority) priority)
-
-                (flycheck-define-error-level new-level
-                  :severity (flycheck-error-level-severity level)
-                  :compilation-level (flycheck-error-level-compilation-level level)
-                  :overlay-category category
-                  :fringe-bitmap bitmaps
-                  :fringe-face (flycheck-error-level-fringe-face level)
-                  :margin-spec (flycheck-error-level-margin-spec level)
-                  :error-list-face (flycheck-error-level-error-list-face level))
-
-                new-level)))
-      level)))
-
-
-(defun flycheck-eglot--report-eglot-diagnostics (diags &rest _)
-  "Report function for the `eglot-flymake-backend'.
-DIAGS is the Eglot diagnostics list in Flymake format."
-  (cl-flet
-      ((diag-to-err (diag)
-                    ;; Translate flymake to flycheck
-                    (with-current-buffer (flymake-diagnostic-buffer diag)
-                      (flycheck-error-new-at-pos
-                       (flymake-diagnostic-beg diag) ; POS
-                       (flycheck-eglot--get-error-level diag) ; LEVEL
-                       (flymake-diagnostic-text diag)  ; MESSAGE
-                       :end-pos (flymake-diagnostic-end diag)
-                       :checker 'eglot-check
-                       :buffer (current-buffer)
-                       :filename (buffer-file-name)))))
-
-    (setq flycheck-eglot--current-errors
-          (mapcar #'diag-to-err diags))
-    (flycheck-eglot--call-current-callback)))
 
 
 (defun flycheck-eglot--lsp-pos-marker (pos)
