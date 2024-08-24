@@ -257,7 +257,7 @@ COLUMN is 0-indexed."
     (with-current-buffer buffer
       (setq flycheck-eglot--current-diagnostics
             (--map (flycheck-eglot--from-eglot-diagnostic it)
-                   (setq-into diagnostics 'list)))
+                   (seq-into diagnostics 'list)))
       (when flycheck-mode (flycheck-buffer)))))
 
 
