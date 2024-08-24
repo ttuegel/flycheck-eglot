@@ -64,6 +64,7 @@
 (require 'flycheck)
 (require 'flymake)
 (require 'eglot)
+(require 'dash)
 
 
 (defgroup flycheck-eglot nil
