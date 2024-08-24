@@ -199,8 +199,8 @@ DIAGS is the Eglot diagnostics list in Flymake format."
 (defun flycheck-eglot--line-column-marker (line column)
   "Return the point closest to LINE, COLUMN as a marker.
 
-COLUMN is 0-indexed."
-  (set-marker (make-marker) (flycheck-line-column-to-position line (1+ column))))
+LINE and COLUMN are 0-indexed, as is conventional for LSP."
+  (set-marker (make-marker) (flycheck-line-column-to-position (1+ line) (1+ column))))
 
 
 (defun flycheck-eglot--from-eglot-diagnostic (diagnostic)
