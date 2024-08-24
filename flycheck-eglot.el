@@ -232,8 +232,8 @@ COLUMN is 0-indexed."
           (level (plist-get diagnostic :level))
           (code (plist-get diagnostic :code))
           (message (plist-get diagnostic :message))
-          ((start-line . start-column) (flycheck-line-column (marker-position start-marker)))
-          ((end-line . end-column) (flycheck-line-column (marker-position end-marker)))
+          ((start-line . start-column) (flycheck-line-column-at-pos (marker-position start-marker)))
+          ((end-line . end-column) (flycheck-line-column-at-pos (marker-position end-marker)))
           (buffer (current-buffer))
           (filename (buffer-file-name buffer)))
     (flycheck-error-new
