@@ -205,7 +205,7 @@ COLUMN is 0-indexed."
 
 (defun flycheck-eglot--from-eglot-diagnostic (diagnostic)
   "Convert LSP diagnostic DIAGNOSTIC to our internal representation."
-  (eglot--dbind ((Diagnostic) code range message severity source) diag
+  (eglot--dbind ((Diagnostic) code range message severity source) diagnostic
     (let* ((range-start (plist-get range :start))
            (range-end (plist-get range :end))
            (range-start-line (plist-get range-start :line))
