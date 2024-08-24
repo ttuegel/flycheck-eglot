@@ -197,30 +197,24 @@ DIAGS is the Eglot diagnostics list in Flymake format."
     (flycheck-eglot--call-current-callback)))
 
 
-(defun flycheck-eglot--line-column-marker (line column)
-  "Return the point closest to LINE, COLUMN as a marker.
+(defun flycheck-eglot--lsp-pos-marker (pos)
+  "Return the point closest to POS as a marker.
 
-LINE and COLUMN are 0-indexed, as is conventional for LSP."
-  (set-marker (make-marker) (flycheck-line-column-to-position (1+ line) (1+ column))))
+POS is a list of properties `:line' and `:character', which are 0-indexed."
+  (-let* (((&plist :line line :character column) pos))
+    (set-marker (make-marker) (flycheck-line-column-to-position (1+ line) (1+ column)))))
 
 
 (defun flycheck-eglot--from-eglot-diagnostic (diagnostic)
   "Convert LSP diagnostic DIAGNOSTIC to our internal representation."
   (eglot--dbind ((Diagnostic) code range message severity source) diagnostic
-    (let* ((range-start (plist-get range :start))
-           (range-end (plist-get range :end))
-           (range-start-line (plist-get range-start :line))
-           (range-start-column (plist-get range-start :character))
-           (range-end-line (plist-get range-end :line))
-           (range-end-column (plist-get range-end :character))
-           (level (cond ((null severity) 'error)
-                        ((<= severity 1) 'error)
-                        ((= severity 2)  'warning)
-                        (t               'info)))
-           (start-marker (flycheck-eglot--line-column-marker range-start-line range-start-column))
-           (end-marker (flycheck-eglot--line-column-marker range-end-line range-end-column)))
-      (list :start-marker start-marker
-            :end-marker end-marker
+    (-let* (((&plist :start range-start :end range-end) range)
+            (level (cond ((null severity) 'error)
+                         ((<= severity 1) 'error)
+                         ((= severity 2)  'warning)
+                         (t               'info))))
+      (list :start-marker (flycheck-eglot--lsp-pos-marker range-start)
+            :end-marker (flycheck-eglot--lsp-pos-marker range-end)
             :level level
             :code code
             :message message))))
